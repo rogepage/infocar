@@ -46,7 +46,7 @@ Os documentos originais de concepção do domínio do Cardok permanecem em `docs
 
 ## 3. Como Continuar o Desenvolvimento com Agentes
 
-Ao abrir `/Users/roger/Desktop/docker/infocar` no Antigravity IDE:
+Ao abrir o diretório raiz do projeto (`./infocar`) no Antigravity IDE:
 
 1. **Via Spec Kit (Recomendado)**:
    - Execute `/speckit-implement` para processar as tarefas ordenadas em [`specs/001-rust-monolith-core/tasks.md`](specs/001-rust-monolith-core/tasks.md); ou
