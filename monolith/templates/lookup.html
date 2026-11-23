@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Infocar — Consulta de Débitos Veiculares</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Plus Jakarta Sans', sans-serif; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 min-h-screen py-10 px-4">
+    <div class="max-w-4xl mx-auto space-y-8">
+        <header class="text-center space-y-2">
+            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-800">
+                Infocar Rust Monolith
+            </span>
+            <h1 class="text-3xl font-extrabold tracking-tight text-slate-900">
+                Consulta de Débitos Veiculares
+            </h1>
+            <p class="text-slate-600 text-sm">
+                Consulte IPVA, Multas e Licenciamento com cálculo atualizado e simulação de pagamento.
+            </p>
+        </header>
+
+        <section class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+            <form method="POST" action="/" class="flex flex-col sm:flex-row gap-4">
+                <div class="flex-1">
+                    <label for="placa" class="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                        Placa do Veículo
+                    </label>
+                    <input
+                        id="placa"
+                        name="placa"
+                        type="text"
+                        maxlength="7"
+                        value="{{ plate_input }}"
+                        placeholder="ABC1234"
+                        class="w-full rounded-xl border border-slate-300 px-4 py-3 text-lg font-bold uppercase tracking-widest focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none"
+                    />
+                </div>
+                <div class="flex items-end">
+                    <button
+                        type="submit"
+                        class="w-full sm:w-auto px-6 py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold transition shadow-sm"
+                    >
+                        Consultar débitos
+                    </button>
+                </div>
+            </form>
+        </section>
+
+        {% if let Some(err) = error_message %}
+        <div class="rounded-2xl border border-rose-200 bg-rose-50 p-5 text-rose-800 font-medium">
+            {{ err }}
+        </div>
+        {% endif %}
+
+        {% if let Some(res) = result %}
+            {% if res.debts.is_empty() %}
+            <div class="rounded-2xl border border-emerald-200 bg-emerald-50 p-6 text-center space-y-1">
+                <h2 class="text-lg font-bold text-emerald-900">Nenhum débito encontrado.</h2>
+                <p class="text-sm text-emerald-700">Seu veículo está sem débitos disponíveis para consulta.</p>
+            </div>
+            {% else %}
+            <section class="space-y-4">
+                <div class="flex items-center justify-between">
+                    <h2 class="text-lg font-bold text-slate-900">
+                        Débitos encontrados ({{ res.plate }})
+                    </h2>
+                    <span class="text-xs font-medium text-slate-500">
+                        Fonte: {{ res.provider_used }}
+                    </span>
+                </div>
+
+                <div class="grid gap-4 sm:grid-cols-2">
+                    {% for d in res.debts %}
+                    <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-3">
+                        <div class="flex items-center justify-between">
+                            <span class="px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 text-slate-800">
+                                {{ d.debt_type }}
+                            </span>
+                            <span class="text-xs font-medium text-amber-700 bg-amber-50 px-2.5 py-1 rounded-lg">
+                                {{ d.days_overdue }} dias em atraso
+                            </span>
+                        </div>
+                        <div class="text-sm text-slate-600 space-y-1">
+                            <div class="flex justify-between">
+                                <span>Vencimento:</span>
+                                <span class="font-medium text-slate-800">{{ d.due_date_br }}</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span>Valor original:</span>
+                                <span class="font-medium text-slate-800">{{ d.original_brl }}</span>
+                            </div>
+                            <div class="flex justify-between pt-2 border-t border-slate-100">
+                                <span class="font-semibold text-slate-900">Valor atualizado:</span>
+                                <span class="font-bold text-indigo-700">{{ d.updated_brl }}</span>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </section>
+
+            <section class="bg-slate-900 text-white rounded-2xl p-6 shadow-md flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                    <p class="text-xs uppercase tracking-wider text-slate-400">Resumo Consolidado</p>
+                    <p class="text-sm text-slate-300 mt-1">
+                        Total Original: <span class="font-semibold text-white">{{ res.total_original_brl }}</span>
+                    </p>
+                </div>
+                <div class="sm:text-right">
+                    <p class="text-xs uppercase tracking-wider text-slate-400">Total Atualizado (com juros)</p>
+                    <p class="text-2xl font-extrabold text-emerald-400">{{ res.total_updated_brl }}</p>
+                </div>
+            </section>
+
+            <section class="space-y-4">
+                <h2 class="text-lg font-bold text-slate-900">Opções de Pagamento</h2>
+                <div class="grid gap-4">
+                    {% for opt in res.payment_options %}
+                    <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+                        <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                            <h3 class="font-bold text-slate-900">{{ opt.title }}</h3>
+                            <span class="text-sm font-semibold text-slate-600">Base: {{ opt.base_brl }}</span>
+                        </div>
+                        <div class="grid sm:grid-cols-2 gap-4">
+                            <div class="rounded-xl bg-emerald-50 border border-emerald-200 p-4">
+                                <p class="text-xs font-bold uppercase text-emerald-800">PIX à Vista (5% OFF)</p>
+                                <p class="text-xl font-extrabold text-emerald-900 mt-1">{{ opt.pix_brl }}</p>
+                            </div>
+                            <div class="rounded-xl bg-slate-50 border border-slate-200 p-4 space-y-1.5">
+                                <p class="text-xs font-bold uppercase text-slate-700">Cartão de Crédito</p>
+                                {% for inst in opt.installments %}
+                                <div class="flex justify-between text-sm text-slate-700">
+                                    <span>{{ inst.quantity }}x</span>
+                                    <span class="font-semibold text-slate-900">{{ inst.amount_brl }}</span>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </section>
+            {% endif %}
+        {% endif %}
+    </div>
+</body>
+</html>
