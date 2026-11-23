@@ -50,20 +50,32 @@ flowchart LR
 
 ---
 
-## Footprint e Latência Observados
+## Benchmark Comparativo: Cardok (PHP) vs Infocar (Rust)
 
-Medições coletadas na stack Docker local (`rust:1.88-slim-bookworm` → `debian:bookworm-slim` para o monólito; PHP 8.4 para os satélites):
+Medições executadas no mesmo host Docker, com ambos os monólitos consumindo os mesmos provedores satélites em PHP (`provider-rest`, `provider-soap`, `provider-csv`, `payment-provider`).
 
-| Serviço | Stack | Imagem | Memória (`docker stats`) |
-| :--- | :--- | :--- | :--- |
-| `infocar-monolith` | Rust (`axum` + `tokio`) | `148MB` | `2.055 MiB` |
-| `infocar-provider-rest` | PHP 8.4 / Laravel | — | `59.93 MiB` |
-| `infocar-provider-soap` | PHP 8.4 / Laravel | — | `60.52 MiB` |
-| `infocar-provider-csv` | PHP 8.4 / Laravel | — | `59.04 MiB` |
-| `infocar-payment-provider` | PHP 8.4 CLI | — | `10.75 MiB` |
+### Paridade Funcional (`diff -u`)
+- **`ABC1234` e `LIC2024`**: **ZERO DIFF** entre as respostas JSON do `cardok` (PHP) e `infocar` (Rust).
 
-- **`GET /api/health/integrations` (`X-Cache: HIT`)**: `~2.10 ms` (`time_total` via `curl`)
-- **`POST /api/v1/vehicles/debts` (`ABC1234` ponta a ponta via PHP `provider-rest`)**: `~40.51 ms`
+### Footprint de Imagem e Memória
+
+| Métrica | Cardok (PHP 8.4 / Laravel) | Infocar (Rust 1.88 / Axum) | Diferença |
+| :--- | :---: | :---: | :---: |
+| **Imagem Docker (`monolith`)** | `176MB` | `148MB` | `-15.9%` |
+| **Memória em Idle (`docker stats`)** | `73.08 MiB` | `2.47 MiB` | **~29,6x menor** |
+| **Memória Pós-Carga (`docker stats`)** | `75.15 MiB` | `3.54 MiB` | **~21,2x menor** |
+
+### Throughput e Latência sob Concorrência
+
+| Cenário | Cardok (PHP) | Infocar (Rust) | Ganho (Rust/PHP) |
+| :--- | :---: | :---: | :---: |
+| **`GET /api/health`** (500 reqs, conc. 20) | `49.58 req/s` · p50 `356.16 ms` · p99 `675.67 ms` | **`1108.04 req/s`** · p50 **`15.72 ms`** · p99 **`36.67 ms`** | **22,3x** throughput |
+| **`GET /api/health/integrations`** (`X-Cache: HIT`, 300 reqs, conc. 15) | `27.58 req/s` · p50 `340.92 ms` · p99 `3088.94 ms` | **`1295.67 req/s`** · p50 **`10.51 ms`** · p99 **`21.25 ms`** | **47,0x** throughput |
+| **`POST /api/v1/vehicles/debts`** (`ABC1234`, 50 reqs, conc. 5, via PHP `provider-rest`) | `9.00 req/s` · p50 `532.08 ms` · p99 `1031.76 ms` | **`36.01 req/s`** · p50 **`102.49 ms`** · p99 **`437.40 ms`** | **4,0x** throughput |
+
+> No **Cardok (PHP)**, o ciclo de bootstrap por requisição e a concorrência limitada enfileiram chamadas simultâneas (`p99` até `3088.94 ms` no endpoint cacheado). No **Infocar (Rust)**, o runtime assíncrono `tokio` com `Arc<AppState>` residente mantém o `p99` em `21.25 ms` no cache em memória e entrega **4x mais throughput** mesmo quando o gargalo externo passa a ser o `provider-rest` em PHP.
+
+Relatório completo em [`specs/007-testes-e-comparacao/benchmark-report.md`](specs/007-testes-e-comparacao/benchmark-report.md).
 
 ---
 
