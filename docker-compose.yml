@@ -1,0 +1,146 @@
+services:
+  monolith:
+    build:
+      context: ./monolith
+      dockerfile: Dockerfile
+    container_name: infocar-monolith
+    ports:
+      - "${MONOLITH_PORT:-8000}:8000"
+    environment:
+      - APP_NAME=Infocar
+      - APP_ENV=local
+      - APP_DEBUG=true
+      - APP_URL=http://localhost:8000
+      - HOST=0.0.0.0
+      - PORT=8000
+      - RUST_LOG=${RUST_LOG:-info}
+      - PROVIDER_REST_URL=http://provider-rest:8000
+      - PROVIDER_SOAP_URL=http://provider-soap:8000
+      - PROVIDER_AI_URL=http://provider-csv:8000
+      - PROVIDER_CSV_URL=http://provider-csv:8000
+      - PAYMENT_PROVIDER_URL=http://payment-provider:8000
+      - PROVIDER_ORDER=${PROVIDER_ORDER:-rest,soap,csv}
+      - PROVIDER_TIMEOUT=${PROVIDER_TIMEOUT:-2}
+      - PROVIDER_RETRIES=${PROVIDER_RETRIES:-2}
+      - PROVIDER_BACKOFF_MS=${PROVIDER_BACKOFF_MS:-100}
+      - LOG_FILE_PATH=/var/www/html/storage/logs/laravel.log
+    volumes:
+      - ./monolith/storage/logs:/var/www/html/storage/logs
+    networks:
+      - infocar-network
+    depends_on:
+      provider-rest:
+        condition: service_healthy
+      provider-soap:
+        condition: service_healthy
+      provider-csv:
+        condition: service_healthy
+      payment-provider:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8000/api/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  provider-rest:
+    build:
+      context: ./provider-rest
+      dockerfile: Dockerfile
+    container_name: infocar-provider-rest
+    ports:
+      - "${PROVIDER_REST_PORT:-8001}:8000"
+    environment:
+      - APP_NAME=Infocar-Provider-Rest
+      - APP_ENV=local
+      - APP_DEBUG=true
+      - APP_URL=http://localhost:8001
+      - PROVIDER_MODE=${PROVIDER_MODE:-success}
+      - SESSION_DRIVER=array
+      - CACHE_STORE=array
+    volumes:
+      - ./provider-rest:/var/www/html
+    networks:
+      - infocar-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8000/api/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 60s
+
+  provider-soap:
+    build:
+      context: ./provider-soap
+      dockerfile: Dockerfile
+    container_name: infocar-provider-soap
+    ports:
+      - "${PROVIDER_SOAP_PORT:-8002}:8000"
+    environment:
+      - APP_NAME=Infocar-Provider-Soap
+      - APP_ENV=local
+      - APP_DEBUG=true
+      - APP_URL=http://localhost:8002
+      - PROVIDER_MODE=${PROVIDER_MODE:-success}
+      - SESSION_DRIVER=array
+      - CACHE_STORE=array
+    volumes:
+      - ./provider-soap:/var/www/html
+    networks:
+      - infocar-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8000/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 60s
+
+  provider-csv:
+    build:
+      context: ./provider-csv
+      dockerfile: Dockerfile
+    container_name: infocar-provider-csv
+    ports:
+      - "${PROVIDER_CSV_PORT:-8003}:8000"
+    environment:
+      - APP_NAME=Infocar-Provider-Csv
+      - APP_ENV=local
+      - APP_DEBUG=true
+      - APP_URL=http://localhost:8003
+      - PROVIDER_MODE=${PROVIDER_MODE:-success}
+      - SESSION_DRIVER=array
+      - CACHE_STORE=array
+    volumes:
+      - ./provider-csv:/var/www/html
+    networks:
+      - infocar-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8000/api/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 60s
+
+  payment-provider:
+    build:
+      context: ./payment-provider
+      dockerfile: Dockerfile
+    container_name: infocar-payment-provider
+    expose:
+      - "8000"
+    volumes:
+      - ./payment-provider:/var/www/html
+    networks:
+      - infocar-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8000/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+networks:
+  infocar-network:
+    name: infocar-network
+    driver: bridge
