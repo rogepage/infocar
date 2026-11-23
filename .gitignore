@@ -1,0 +1,7 @@
+.env
+.DS_Store
+Thumbs.db
+cardok-core.zip
+monolith/target/
+monolith/storage/logs/*.log
+**/vendor/
