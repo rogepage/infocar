@@ -77,6 +77,22 @@ Medições executadas no mesmo host Docker, com ambos os monólitos consumindo o
 
 > No **Cardok (PHP)**, o ciclo de bootstrap por requisição e a concorrência limitada enfileiram chamadas simultâneas (`p99` até `3088.94 ms` no endpoint cacheado). No **Infocar (Rust)**, o runtime assíncrono `tokio` com `Arc<AppState>` residente mantém o `p99` em `21.25 ms` no cache em memória e entrega **4x mais throughput** mesmo quando o gargalo externo passa a ser o `provider-rest` em PHP.
 
+### Resumo Executivo (Onde o Rust Venceu)
+
+Em todos os cenários medidos de execução, o **Rust** venceu com **100% de paridade funcional (`ZERO DIFF`)**:
+
+| Dimensão | Vencedor | Margem |
+| :--- | :---: | :--- |
+| **Imagem Docker** | Rust (`148MB` vs `176MB`) | `-15.9%` |
+| **Memória em Idle** | Rust (`2.47 MiB` vs `73.08 MiB`) | **~29,6x menor** |
+| **Memória Pós-Carga** | Rust (`3.54 MiB` vs `75.15 MiB`) | **~21,2x menor** |
+| **`GET /api/health`** | Rust (`1108.04` vs `49.58 req/s`) | **22,3x** throughput |
+| **`GET /api/health/integrations` (cache)** | Rust (`1295.67` vs `27.58 req/s`) | **47,0x** throughput |
+| **`POST /api/v1/vehicles/debts` (via PHP)** | Rust (`36.01` vs `9.00 req/s`) | **4,0x** throughput |
+| **Paridade de Contrato (`diff -u`)** | Empate (`ZERO DIFF`) | 100% idênticos |
+
+> **Nuances de engenharia:** (1) No `POST /api/v1/vehicles/debts`, o ganho cai de `47x` para `4x` porque o gargalo externo passa a ser o `provider-rest` em PHP (`~100ms`/chamada); (2) O PHP vence em **tempo de build** no ciclo de desenvolvimento, pois não possui etapa de compilação (`cargo build --release`).
+
 Relatório completo em [`specs/007-testes-e-comparacao/benchmark-report.md`](specs/007-testes-e-comparacao/benchmark-report.md).
 
 ---

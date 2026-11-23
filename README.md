@@ -77,6 +77,22 @@ Measured on the same Docker host, with both monoliths querying the exact same PH
 
 > In **Cardok (PHP)**, per-request framework bootstrapping and limited worker concurrency queue concurrent requests (`p99` up to `3088.94 ms` on the cached endpoint). In **Infocar (Rust)**, the async `tokio` runtime with resident `Arc<AppState>` keeps `p99` at `21.25 ms` on the in-memory cache and delivers **4x higher throughput** even when the external PHP `provider-rest` service becomes the bottleneck.
 
+### Executive Summary (Where Rust Won)
+
+Across all measured runtime scenarios, **Rust** outperformed PHP with **100% functional parity (`ZERO DIFF`)**:
+
+| Dimension | Winner | Margin |
+| :--- | :---: | :--- |
+| **Docker Image** | Rust (`148MB` vs `176MB`) | `-15.9%` |
+| **Idle Memory** | Rust (`2.47 MiB` vs `73.08 MiB`) | **~29.6x lower** |
+| **Post-Load Memory** | Rust (`3.54 MiB` vs `75.15 MiB`) | **~21.2x lower** |
+| **`GET /api/health`** | Rust (`1108.04` vs `49.58 req/s`) | **22.3x** throughput |
+| **`GET /api/health/integrations` (cache)** | Rust (`1295.67` vs `27.58 req/s`) | **47.0x** throughput |
+| **`POST /api/v1/vehicles/debts` (via PHP)** | Rust (`36.01` vs `9.00 req/s`) | **4.0x** throughput |
+| **Contract Parity (`diff -u`)** | Tie (`ZERO DIFF`) | 100% identical |
+
+> **Engineering nuances:** (1) On `POST /api/v1/vehicles/debts`, the speedup drops from `47x` to `4x` because the external PHP `provider-rest` service (`~100ms`/call) becomes the bottleneck; (2) PHP wins on **build time** during local iteration since it requires no compilation step (`cargo build --release`).
+
 Full report available at [`specs/007-testes-e-comparacao/benchmark-report.md`](specs/007-testes-e-comparacao/benchmark-report.md).
 
 ---
