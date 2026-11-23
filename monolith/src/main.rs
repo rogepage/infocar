@@ -1,18 +1,25 @@
+use infocar_monolith::cli::check_services::run_check_services;
 use infocar_monolith::config::AppConfig;
 use infocar_monolith::http::routes::build_router;
 use infocar_monolith::http::state::AppState;
 use std::env;
 use std::net::SocketAddr;
+use std::process;
 
 #[tokio::main]
 async fn main() {
+    let config = AppConfig::from_env();
+
     let args: Vec<String> = env::args().collect();
     if args.len() > 1 && args[1] == "check-services" {
-        println!("Infocar Core Status: SAUDÁVEL (Bootstrap Rust operacional)");
-        return;
+        let ok = run_check_services(&config).await;
+        if ok {
+            process::exit(0);
+        } else {
+            process::exit(1);
+        }
     }
 
-    let config = AppConfig::from_env();
     let port = config.port;
     let state = AppState::from_config(config);
     let app = build_router(state);
