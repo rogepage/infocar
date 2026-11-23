@@ -1,56 +1,145 @@
-# Infocar — Monólito em Rust + Provedores em PHP
+# Infocar
 
-> Reimplementação de alta performance do núcleo monolítico do **Cardok** em **Rust** (`axum` + `tokio`), preservando os serviços satélites (`provider-rest`, `provider-soap`, `provider-csv` e `payment-provider`) em **PHP** para comparação direta de arquitetura, latência, consumo de memória e resiliência entre as duas stacks.
-
----
-
-## 1. Visão Geral e Objetivo do Projeto
-
-O **Infocar** mantém **100% de paridade funcional e de contratos HTTP/JSON/Logs** com o projeto `cardok` original:
-- **Monólito (`monolith/`)**: Escrito em **Rust**, estruturado com **Arquitetura Hexagonal (Ports & Adapters)** e **DDD**.
-- **Provedores Externos (`provider-rest/`, `provider-soap/`, `provider-csv/`, `payment-provider/`)**: Mantidos em **PHP** em containers Docker independentes, simulando sistemas legados estaduais (Detran/Sefaz) com suporte a falhas controladas (`PROVIDER_MODE=success|error|timeout|invalid_response`).
+> Reimplementação em **Rust** (`axum` + `tokio`) do núcleo monolítico de consulta e negociação de débitos veiculares do **Cardok**, mantendo os serviços satélites em **PHP** para benchmark controlado de latência, footprint de memória, resiliência e paridade estrita de contratos.
 
 ---
 
-## 2. Mapa da Documentação para Agentes e Desenvolvedores
+## Visão Geral e Tese Arquitetural
 
-Toda a documentação necessária para construir, validar e comparar o projeto está organizada abaixo:
+O **Infocar** foi construído como um experimento comparativo de engenharia: substituir o monólito principal (originalmente PHP/Laravel) por um binário **Rust** compilado via multi-stage build, preservando **100% dos contratos públicos** (payloads JSON, códigos HTTP, headers de segurança, logs estruturados e regras financeiras ao centavo) e consumindo os mesmos provedores externos em PHP em rede Docker isolada.
 
-### Governança e Instruções de Agentes
-- [`AGENTS.md`](AGENTS.md) — Diretrizes operacionais para agentes de IA (Antigravity, Claude, Codex).
-- [`CLAUDE.md`](CLAUDE.md) — Guia rápido de contexto para agentes.
-- [`.specify/memory/constitution.md`](.specify/memory/constitution.md) — **Constituição do Projeto Infocar (v2.0.0)** com os 10 princípios e gates inegociáveis.
-
-### Plano Arquitetural e Guias de Implementação em Rust (`docs/`)
-- [`docs/00-plano-arquitetural-rust.md`](docs/00-plano-arquitetural-rust.md) — **Plano Arquitetural Completo** para recriar o monólito em Rust (mapeamento de classes PHP → módulos Rust, stack de crates, fórmulas financeiras exatas e roteiro de 7 fases).
-- **Guias Passo a Passo por Fase (`docs/rust-phases/`)**:
-  1. [`docs/rust-phases/fase-01-dominio-financeiro.md`](docs/rust-phases/fase-01-dominio-financeiro.md) — `Money(i64)`, `HalfUpRounder`, `Clock`, Políticas de Juros (IPVA, Multa, Licenciamento) e `PaymentSimulator` (PIX e Tabela Price).
-  2. [`docs/rust-phases/fase-02-aplicacao-resiliencia.md`](docs/rust-phases/fase-02-aplicacao-resiliencia.md) — `PlateMasker`, `ProviderResolver`, `ProviderExecutor` (retry linear + fail-fast) e `VehicleDebtService` (*First-Success-Wins*).
-  3. [`docs/rust-phases/fase-03-adapters-http-providers.md`](docs/rust-phases/fase-03-adapters-http-providers.md) — Clientes `reqwest` para os containers PHP (`RestVehicleDebtProvider`, `SoapVehicleDebtProvider`, `AiVehicleDebtProvider` em CSV defensivo).
-  4. [`docs/rust-phases/fase-04-api-http-axum.md`](docs/rust-phases/fase-04-api-http-axum.md) — Rotas `axum`, validação defensiva (HTTP 400/422/503), cache de 5s com `X-Cache`, métricas atômicas e middlewares.
-  5. [`docs/rust-phases/fase-05-web-ui-e-cli.md`](docs/rust-phases/fase-05-web-ui-e-cli.md) — Interface Web (`GET /`) com Tailwind CSS e subcomando CLI `check-services`.
-  6. [`docs/rust-phases/fase-06-docker-e-makefile.md`](docs/rust-phases/fase-06-docker-e-makefile.md) — Multi-stage `Dockerfile` do monólito Rust, integração no `docker-compose.yml` com os providers PHP e `Makefile`.
-  7. [`docs/rust-phases/fase-07-testes-e-comparacao.md`](docs/rust-phases/fase-07-testes-e-comparacao.md) — Suíte de testes em Rust (`cargo test`) e roteiro de benchmark comparativo `cardok` (PHP) vs `infocar` (Rust).
-
-### Artefatos Spec-Driven Development (`specs/001-rust-monolith-core/`)
-- [`specs/001-rust-monolith-core/spec.md`](specs/001-rust-monolith-core/spec.md) — Especificação completa da feature de recriação do monólito em Rust.
-- [`specs/001-rust-monolith-core/plan.md`](specs/001-rust-monolith-core/plan.md) — Plano técnico de implementação.
-- [`specs/001-rust-monolith-core/data-model.md`](specs/001-rust-monolith-core/data-model.md) — Modelo de dados canônico e tipagem em Rust.
-- [`specs/001-rust-monolith-core/contracts/api-contracts.md`](specs/001-rust-monolith-core/contracts/api-contracts.md) — Contratos HTTP da API, dos provedores PHP e dos logs estruturados.
-- [`specs/001-rust-monolith-core/tasks.md`](specs/001-rust-monolith-core/tasks.md) — Backlog de tarefas TDD (`T001` a `T040`) pronto para execução via `/speckit-implement`.
-
-### Documentação Histórica de Referência (`docs/01-infra.md` .. `docs/14-readme.md`)
-Os documentos originais de concepção do domínio do Cardok permanecem em `docs/` para consulta de requisitos históricos e casos de borda.
+```mermaid
+flowchart LR
+    Client["Cliente / Web UI (Askama)"] -->|"HTTP :8000 (X-Request-ID)"| Axum["Axum Router + Middlewares"]
+    Axum -->|"Rate Limit / Validação"| UseCase["GetVehicleDebtsUseCase"]
+    UseCase -->|"First-Success-Wins"| Service["VehicleDebtService + ProviderExecutor"]
+    Service -->|"1. GET JSON (2s)"| Rest["provider-rest (PHP :8001)"]
+    Service -->|"2. POST XML (2s)"| Soap["provider-soap (PHP :8002)"]
+    Service -->|"3. GET CSV (2s)"| Csv["provider-csv (PHP :8003)"]
+    UseCase -->|"i64 Cents + HALF_UP"| Domain["Domínio Puro (Debt + Payment)"]
+```
 
 ---
 
-## 3. Como Continuar o Desenvolvimento com Agentes
+## Decisões de Engenharia e Invariantes
 
-Ao abrir o diretório raiz do projeto (`./infocar`) no Antigravity IDE:
+1. **Arquitetura Hexagonal Estrita (`monolith/src/domain/`)**
+   - A camada de domínio é agnóstica a frameworks HTTP (`axum`), clientes de rede (`reqwest`) e formatos de serialização (`serde_json`, `roxmltree`, `csv`).
+   - Adaptadores externos implementam a porta assíncrona `VehicleDebtProvider` e normalizam JSON, XML e CSV defensivo para o modelo canônico (`ProviderDebtResponse` / `Vec<Debt>`) antes de cruzar a fronteira do domínio.
 
-1. **Via Spec Kit (Recomendado)**:
-   - Execute `/speckit-implement` para processar as tarefas ordenadas em [`specs/001-rust-monolith-core/tasks.md`](specs/001-rust-monolith-core/tasks.md); ou
-   - Execute `/speckit-analyze` para auditar os artefatos de especificação e plano.
-2. **Fase a Fase**:
-   - Peça ao agente: *"Implemente a Fase 1 conforme `docs/rust-phases/fase-01-dominio-financeiro.md`"*, avançando incrementalmente até a Fase 7.
-# infocar
+2. **Precisão Financeira sem Ponto Flutuante (`Money(i64)` + `HalfUpRounder`)**
+   - Todos os valores monetários são armazenados e somados exclusivamente em centavos inteiros (`i64`).
+   - O arredondamento racional utiliza `HalfUpRounder::round(numerator, denominator)` sem conversão intermediária para `f64`.
+   - O teto de `20%` para `IPVA` e `LICENCIAMENTO` (`0,33%/dia`) é aplicado sobre o numerador exato antes da divisão. `MULTA` aplica `1,00%/dia` sem teto.
+   - `f64` é restrito exclusivamente ao coeficiente adimensional da Tabela Price ($i = 0.025$ a.m. em `6x` e `12x`), arredondado uma única vez para centavos inteiros.
+
+3. **Resiliência *First-Success-Wins* e *Fail-Fast***
+   - Ordem configurável via `PROVIDER_ORDER` (padrão `rest,soap,csv`) ou override explícito `"provider"` no request.
+   - **Falhas transitórias** (`ProviderError::Unavailable`: timeout, erro de rede, HTTP 5xx): retry sequencial com backoff linear (`attempt * PROVIDER_BACKOFF_MS`, padrão `100ms` e `200ms` para `PROVIDER_RETRIES=2`).
+   - **Falhas de contrato** (`ProviderError::InvalidResponse`: JSON/XML/CSV malformado): *fail-fast* imediato na 1ª tentativa, acionando fallback para o próximo provedor.
+   - Resposta válida com `0` débitos encerra a consulta com sucesso (**não** dispara fallback).
+
+4. **Determinismo Temporal (`Clock` trait)**
+   - Regras de atraso dependem da trait `Clock` injetável (padrão `FixedClock` em `2024-05-10T00:00:00Z`), evitando chamadas diretas a `Utc::now()` no domínio.
+
+5. **Observabilidade, Privacidade (LGPD) e Cache**
+   - Propagação e validação de `X-Request-ID` (`^[a-zA-Z0-9\-_]{1,64}$` ou geração de UUID v4).
+   - Mascaramento obrigatório de placas em logs via `PlateMasker` (`ABC1234` → `ABC****`).
+   - Logs estruturados em JSON de linha única emitidos simultaneamente em `stdout` e `monolith/storage/logs/laravel.log` (mantendo compatibilidade direta com os scripts de auditoria e demonstração).
+   - `GET /api/health/integrations` utiliza cache em memória com TTL de `5s` (`RwLock`) expondo `X-Cache: HIT|MISS` e respeitando `Cache-Control: no-cache`.
+
+---
+
+## Footprint e Latência Observados
+
+Medições coletadas na stack Docker local (`rust:1.88-slim-bookworm` → `debian:bookworm-slim` para o monólito; PHP 8.4 para os satélites):
+
+| Serviço | Stack | Imagem | Memória (`docker stats`) |
+| :--- | :--- | :--- | :--- |
+| `infocar-monolith` | Rust (`axum` + `tokio`) | `148MB` | `2.055 MiB` |
+| `infocar-provider-rest` | PHP 8.4 / Laravel | — | `59.93 MiB` |
+| `infocar-provider-soap` | PHP 8.4 / Laravel | — | `60.52 MiB` |
+| `infocar-provider-csv` | PHP 8.4 / Laravel | — | `59.04 MiB` |
+| `infocar-payment-provider` | PHP 8.4 CLI | — | `10.75 MiB` |
+
+- **`GET /api/health/integrations` (`X-Cache: HIT`)**: `~2.10 ms` (`time_total` via `curl`)
+- **`POST /api/v1/vehicles/debts` (`ABC1234` ponta a ponta via PHP `provider-rest`)**: `~40.51 ms`
+
+---
+
+## Quickstart e Operação
+
+Pré-requisito: **Docker** com Compose v2 (não é necessário ter Rust/Cargo instalado localmente; o `Makefile` usa o container `rust:1.88-slim-bookworm` automaticamente como fallback).
+
+```bash
+# Subir toda a stack (build multi-stage Rust + 4 containers PHP) e aguardar healthchecks
+make up
+
+# Validar Docker Compose, suíte completa de testes (49/49) e conectividade entre containers
+make check
+
+# Executar cenários ponta a ponta: sucesso (LIC2024), fallback REST->SOAP (ABC1234) e erro 400
+make demo
+
+# Executar apenas a suíte de testes unitários e de integração
+make test
+
+# Diagnóstico CLI de conectividade com os serviços PHP
+make health
+
+# Acompanhar logs JSON estruturados em tempo real
+make logs
+
+# Encerrar os containers
+make down
+```
+
+---
+
+## Contratos HTTP (`:8000`)
+
+| Método | Rota | Descrição |
+| :--- | :--- | :--- |
+| `GET` | `/` | Interface Web (`askama` + Tailwind CSS) para consulta de placas |
+| `POST` | `/api/v1/vehicles/debts` | Consulta débitos, calcula juros e simula pagamentos (`200`, `400`, `422`, `429`, `503`) |
+| `GET` | `/api/health` | Health check rápido do monólito |
+| `GET` | `/api/health/integrations` | Saúde dos provedores PHP com cache de 5s (`X-Cache: HIT\|MISS`) |
+| `GET` | `/api/metrics` | Contadores atômicos lock-free (`AtomicU64`) em tempo real |
+
+Exemplo de consulta:
+
+```bash
+curl -s -X POST http://localhost:8000/api/v1/vehicles/debts \
+  -H "Content-Type: application/json" \
+  -d '{"placa":"ABC1234"}' | jq .
+```
+
+---
+
+## Estrutura do Repositório e Fases (Spec-Driven Development)
+
+```text
+infocar/
+├── monolith/                        # Monólito em Rust (Cargo + Axum + Askama)
+│   ├── src/domain/                  # Núcleo financeiro puro (Money, Rounding, Policies, Payment)
+│   ├── src/application/             # Orquestração, Retry, Fallback e PlateMasker
+│   ├── src/infrastructure/          # Adapters REST/SOAP/CSV, Metrics e StructuredLogger
+│   ├── src/http/                    # Router Axum, Handlers, Cache e Middlewares
+│   ├── src/cli/                     # Subcomando check-services
+│   ├── templates/                   # Template HTML Tailwind (lookup.html)
+│   └── tests/                       # Testes de integração HTTP, Resiliência e Web UI
+├── provider-rest/                   # Serviço satélite PHP (JSON) — :8001
+├── provider-soap/                   # Serviço satélite PHP (XML)  — :8002
+├── provider-csv/                    # Serviço satélite PHP (CSV)  — :8003
+├── payment-provider/                # Serviço satélite PHP (rede interna)
+├── specs/                           # Especificações, planos e tarefas por fase (001..007)
+├── docs/                            # Plano arquitetural e guias detalhados por fase
+├── docker-compose.yml
+└── Makefile
+```
+
+### Documentação de Referência
+- **Constituição do Projeto**: [`.specify/memory/constitution.md`](.specify/memory/constitution.md)
+- **Plano Arquitetural Geral**: [`docs/00-plano-arquitetural-rust.md`](docs/00-plano-arquitetural-rust.md)
+- **Contratos de API e Logs**: [`specs/001-rust-monolith-core/contracts/api-contracts.md`](specs/001-rust-monolith-core/contracts/api-contracts.md)
+- **Relatório de Medição**: [`specs/007-testes-e-comparacao/benchmark-report.md`](specs/007-testes-e-comparacao/benchmark-report.md)
